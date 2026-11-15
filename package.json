@@ -1,0 +1,32 @@
+{
+  "name": "almanac",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "sync": "tsx src/index.ts sync",
+    "serve": "tsx src/index.ts serve",
+    "dev": "tsx watch src/index.ts serve",
+    "feed": "tsx src/index.ts feed",
+    "day": "tsx src/index.ts day",
+    "stats": "tsx src/index.ts stats",
+    "sources": "tsx src/index.ts sources",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.10.0",
+    "express": "^4.21.2",
+    "sax": "^1.6.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.10.5",
+    "@types/sax": "^1.2.7",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}

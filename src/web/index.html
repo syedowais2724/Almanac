@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Almanac — feed</title>
+    <style>
+      :root {
+        --bg: #0a0b0d;
+        --panel: #12141a;
+        --line: #1e222b;
+        --text: #e7e9ee;
+        --muted: #7d8595;
+        --accent: #7ee0a8;
+        --warm: #f0c674;
+        --cool: #82aaff;
+        --pink: #d183e8;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+      header {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        background: rgba(10, 11, 13, 0.92);
+        backdrop-filter: blur(8px);
+        border-bottom: 1px solid var(--line);
+      }
+      .bar { max-width: 900px; margin: 0 auto; padding: 14px 20px 10px; }
+      h1 { margin: 0 0 8px; font-size: 15px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
+      .counts { display: flex; gap: 18px; flex-wrap: wrap; color: var(--muted); font-size: 12px; }
+      .counts b { color: var(--text); font-weight: 600; }
+      .filters { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+      .chip {
+        border: 1px solid var(--line);
+        background: transparent;
+        color: var(--muted);
+        padding: 3px 10px;
+        border-radius: 999px;
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .chip[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+      main { padding: 8px 20px 80px; max-width: 900px; margin: 0 auto; }
+      .day {
+        margin: 22px 0 6px;
+        color: var(--muted);
+        font-size: 11px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        border-bottom: 1px solid var(--line);
+        padding-bottom: 4px;
+      }
+      .row { display: grid; grid-template-columns: 58px 96px 1fr; gap: 12px; padding: 7px 0; border-bottom: 1px solid rgba(30, 34, 43, 0.55); }
+      .time { color: var(--muted); font-size: 12px; padding-top: 1px; }
+      .kind { font-size: 11px; letter-spacing: 0.04em; padding-top: 2px; text-transform: uppercase; }
+      .kind.commit { color: var(--cool); }
+      .kind.pr { color: var(--accent); }
+      .kind.ai_session, .kind.ai_block { color: var(--pink); }
+      .kind.sleep { color: var(--warm); }
+      .kind.activity { color: var(--warm); }
+      .kind.workout { color: var(--accent); }
+      .body { min-width: 0; }
+      .title { overflow-wrap: anywhere; }
+      .sub { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+      .val { color: var(--muted); font-size: 12px; }
+      #sentinel { height: 40px; }
+      .empty { color: var(--muted); padding: 40px 0; text-align: center; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="bar">
+        <h1>almanac feed <a href="/" style="float:right;font-size:11px;letter-spacing:.1em;color:#78818f;text-decoration:none;border-bottom:1px solid #1e222b">dashboard &rarr;</a></h1>
+        <div class="counts" id="counts"></div>
+        <div class="filters" id="filters"></div>
+      </div>
+    </header>
+    <main>
+      <div id="feed"></div>
+      <div id="sentinel"></div>
+    </main>
+    <script>
+      const token = new URLSearchParams(location.search).get('token');
+      const qs = (t) => (t ? `&token=${encodeURIComponent(t)}` : '');
+      let cursor = null;
+      let loading = false;
+      let kind = null;
+
+      async function get(path) {
+        const res = await fetch(`${path}${path.includes('?') ? '&' : '?'}x=1${qs(token)}`);
+        if (!res.ok) throw new Error(`${path} ${res.status}`);
+        return res.json();
+      }
+
+      function el(tag, cls, text) {
+        const node = document.createElement(tag);
+        if (cls) node.className = cls;
+        if (text != null) node.textContent = text;
+        return node;
+      }
+
+      function dayLabel(iso) {
+        return new Date(iso).toLocaleDateString('en-GB', {
+          weekday: 'short', day: '2-digit', month: 'short', year: 'numeric',
+        });
+      }
+
+      function renderStat(n, label) {
+        const span = el('span');
+        span.append(el('b', null, n), document.createTextNode(` ${label}`));
+        return span;
+      }
+
+      async function loadStats() {
+        const s = await get('/v1/stats?since=' + new Date(Date.now() - 30 * 86400000).toISOString());
+        const box = document.getElementById('counts');
+        box.replaceChildren(
+          renderStat(s.totals.events, 'events / 30d'),
+          renderStat(s.totals.commits, 'commits'),
+          renderStat(s.totals.aiSessions, 'ai sessions'),
+          renderStat(s.totals.aiPrompts, 'ai prompts'),
+          renderStat(s.totals.sleepAvgHours ?? 'no', s.totals.sleepAvgHours == null ? 'sleep yet' : 'avg sleep h'),
+        );
+      }
+
+      function renderFilters() {
+        const box = document.getElementById('filters');
+        const kinds = ['all', 'commit', 'pr', 'ai_session', 'ai_block', 'sleep', 'activity', 'workout'];
+        for (const k of kinds) {
+          const b = el('button', 'chip', k.replace('_', ' '));
+          b.setAttribute('aria-pressed', String(k === 'all'));
+          b.onclick = () => {
+            kind = k === 'all' ? null : k;
+            for (const c of box.children) c.setAttribute('aria-pressed', String(c === b));
+            reset();
+          };
+          box.append(b);
+        }
+      }
+
+      function measure(e) {
+        if (e.value == null) return null;
+        if (e.unit === 'min') return e.value >= 90 ? `${(e.value / 60).toFixed(1)} h` : `${e.value} min`;
+        const label = e.value === 1 && e.unit && e.unit.endsWith('s') ? e.unit.slice(0, -1) : e.unit;
+        return `${e.value}${label ? ' ' + label : ''}`;
+      }
+
+      let lastDay = null;
+      function append(events) {
+        const feed = document.getElementById('feed');
+        for (const e of events) {
+          const label = dayLabel(e.occurredAt);
+          if (label !== lastDay) {
+            feed.append(el('div', 'day', label));
+            lastDay = label;
+          }
+          const row = el('div', 'row');
+          row.append(el('div', 'time', new Date(e.occurredAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false })));
+          row.append(el('div', `kind ${e.kind}`, e.kind.replace('_', ' ')));
+          const body = el('div', 'body');
+          body.append(el('div', 'title', e.title));
+          const bits = [];
+          if (e.subtitle) bits.push(e.subtitle);
+          const size = ['ai_block', 'commit', 'pr'].includes(e.kind) ? null : measure(e);
+          if (size) bits.push(size);
+          if (bits.length) body.append(el('div', 'sub', bits.join(' · ')));
+          row.append(body);
+          feed.append(row);
+        }
+      }
+
+      async function load() {
+        if (loading) return;
+        loading = true;
+        const path = '/v1/feed?limit=40' + (kind ? `&kind=${kind}` : '') + (cursor ? `&before=${encodeURIComponent(cursor)}` : '');
+        const data = await get(path);
+        append(data.events);
+        cursor = data.next;
+        loading = false;
+        if (!data.events.length && !lastDay) {
+          document.getElementById('feed').append(el('div', 'empty', 'no events yet - run npm run sync'));
+        }
+      }
+
+      function reset() {
+        cursor = null;
+        lastDay = null;
+        document.getElementById('feed').replaceChildren();
+        load();
+      }
+
+      const sentinel = document.getElementById('sentinel');
+      new IntersectionObserver((entries) => {
+        if (entries[0].isIntersecting && cursor) load();
+      }, { rootMargin: '400px' }).observe(sentinel);
+
+      renderFilters();
+      loadStats().catch(() => {});
+      load().catch((err) => {
+        document.getElementById('feed').append(el('div', 'empty', err.message.includes('401') ? 'unauthorized - add ?token=... to the url' : err.message));
+      });
+    </script>
+  </body>
+</html>
